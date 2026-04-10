@@ -11,7 +11,7 @@ Personal AI agent for generating Spotify playlist and replacing Disney Genie. Mo
    DISNEY_USERNAME=your_disney_username
    DISNEY_PASSWORD=your_disney_password
    ```
-3. Run the backend: `python -c "import main; import uvicorn; uvicorn.run(main.app, host='0.0.0.0', port=8000)"`
+3. Run the backend: `python -c "import main; import uvicorn; uvicorn.run(main.app, host='0.0.0.0', port=8002)"`
 4. Run the frontend: `python -m streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0`
 
 ## API Endpoints

@@ -17,6 +17,16 @@ class UserConfig(Base):
     key = Column(String, unique=True, index=True)
     value = Column(String)
 
+class SpotifyToken(Base):
+    __tablename__ = "spotify_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    access_token = Column(String)
+    refresh_token = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    token_type = Column(String, default="Bearer")
+    scope = Column(String, nullable=True)
+
 class MustDoRide(Base):
     __tablename__ = "must_do_rides"
 

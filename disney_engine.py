@@ -1,4 +1,4 @@
-import themeparks
+import requests
 import mousetools
 from typing import List, Dict, Optional, Tuple
 import math
@@ -11,24 +11,51 @@ class DisneyIntelligenceEngine:
     """
 
     def __init__(self):
-        self.tp_api = themeparks.api()  # ThemeParks.wiki API
-        self.mt = mousetools.MouseTools()  # MouseTools for additional data
+        # ThemeParks.wiki API base
+        self.api_base = "https://api.themeparks.wiki/v1"
+        # Park IDs mapping - will be populated dynamically
+        self.park_ids = {}
+        self._load_park_ids()
+        self.mt = None  # mousetools.MouseTools()  # For additional data - TODO: fix import
+
+    def _load_park_ids(self):
+        """Load park IDs from the API"""
+        # For now, use hardcoded IDs
+        self.park_ids = {
+            'MagicKingdomWaltDisneyWorld': '75ea578a-adc8-4116-a54d-dccb60765ef9',
+            'EpcotWaltDisneyWorld': '47f90d2c-e191-4239-a466-5892ef59a88b',
+        }
 
     def get_ride_data(self, park_id: str) -> List[Dict]:
         """
-        Fetch current ride wait times and status from ThemeParks.wiki
+        Fetch current ride wait times and status from ThemeParks.wiki API
         """
-        park = self.tp_api.get_park(park_id)
-        rides = []
-        for ride in park.rides:
-            rides.append({
-                'id': ride.id,
-                'name': ride.name,
-                'wait_time': ride.wait_time,
-                'status': ride.status,
-                'location': ride.location  # GPS coords
-            })
-        return rides
+        if park_id not in self.park_ids:
+            return []
+        
+        entity_id = self.park_ids[park_id]
+        url = f"{self.api_base}/entity/{entity_id}/live"
+        
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            
+            rides = []
+            for item in data.get('liveData', []):
+                if item.get('entityType') == 'ATTRACTION':
+                    rides.append({
+                        'id': item['id'],
+                        'name': item['name'],
+                        'wait_time': item.get('queue', {}).get('STANDBY', {}).get('waitTime', 0),
+                        'status': item.get('status', 'Unknown'),
+                        'location': (item.get('location', {}).get('latitude', 0), 
+                                   item.get('location', {}).get('longitude', 0))
+                    })
+            return rides
+        except Exception as e:
+            print(f"Error fetching ride data: {e}")
+            return []
 
     def get_ride_average(self, ride_id: str) -> float:
         """
@@ -81,7 +108,7 @@ class DisneyIntelligenceEngine:
         rides = self.get_ride_data(park_id)
         scored_rides = []
         for ride in rides:
-            if ride['status'] == 'Operating':
+            if ride['status'] == 'OPERATING':
                 score = self.calculate_score(ride, user_location, party_composition)
                 scored_rides.append({**ride, 'score': score})
 
