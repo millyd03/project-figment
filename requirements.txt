@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+litellm
+google-generativeai
+python-dotenv
+pyyaml
+google-cloud-aiplatform
+spotipy
+sqlalchemy
+themeparks
+mousetools
+streamlit

@@ -1,0 +1,3 @@
+model_provider:
+  active: "gemini-pro" # Options: gemini-pro, ollama/gemma2
+  ollama_endpoint: "http://localhost:11434"
