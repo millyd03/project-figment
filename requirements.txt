@@ -12,3 +12,6 @@ sqlalchemy
 mousetools
 streamlit
 requests
+apscheduler
+firebase-admin
+pywebpush

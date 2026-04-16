@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: figment-backend
+    ports:
+      - "8002:8002"
+    environment:
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - DISNEY_USERNAME=${DISNEY_USERNAME}
+      - DISNEY_PASSWORD=${DISNEY_PASSWORD}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./figment.db:/app/figment.db
+      - ./data:/app/data
+    command: python -c "import main; import uvicorn; uvicorn.run(main.app, host='0.0.0.0', port=8002)"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - figment-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: figment-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE=http://backend:8002
+    volumes:
+      - ./frontend:/app/frontend
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - figment-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: figment-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - figment-network
+
+networks:
+  figment-network:
+    driver: bridge
+
+volumes:
+  figment_data:
+    driver: local
+  redis_data:
+    driver: local

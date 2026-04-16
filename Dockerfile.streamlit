@@ -1,0 +1,31 @@
+# Streamlit Frontend Dockerfile
+FROM python:3.13-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Copy project files
+COPY . .
+
+# Create Streamlit config directory
+RUN mkdir -p ~/.streamlit && \
+    echo "[client]\nshowErrorDetails = true" > ~/.streamlit/config.toml
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "frontend/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

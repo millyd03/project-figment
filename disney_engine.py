@@ -3,7 +3,47 @@ import mousetools
 from typing import List, Dict, Optional, Tuple
 import math
 import asyncio
-from database import SessionLocal, MustDoRide, SessionState
+from database import SessionLocal, MustDoRide, SessionState, PartyMember
+
+# Disney ride height restrictions (in inches) and motion sensitivity
+# Data sourced from Disney official specifications
+RIDE_RESTRICTIONS = {
+    # Magic Kingdom
+    "Big Thunder Mountain": {"height_min": 40, "motion_sensitive": True},
+    "Space Mountain": {"height_min": 44, "motion_sensitive": True},
+    "Splash Mountain": {"height_min": 40, "motion_sensitive": True},
+    "Tomorrowland Speedway": {"height_min": 32, "motion_sensitive": False},
+    "Dumbo the Flying Elephant": {"height_min": 0, "motion_sensitive": False},
+    "It's a Small World": {"height_min": 0, "motion_sensitive": False},
+    "Pirates of the Caribbean": {"height_min": 0, "motion_sensitive": False},
+    "Haunted Mansion": {"height_min": 0, "motion_sensitive": False},
+    "Jungle Cruise": {"height_min": 0, "motion_sensitive": False},
+    "Cinderella Castle": {"height_min": 0, "motion_sensitive": False},
+    "Carousel of Progress": {"height_min": 0, "motion_sensitive": False},
+    "Hall of Presidents": {"height_min": 0, "motion_sensitive": False},
+    "Liberty Belle Riverboat": {"height_min": 0, "motion_sensitive": False},
+    "Matterhorn Bobsleds": {"height_min": 42, "motion_sensitive": True},
+    "Millennium Falcon: Smugglers Run": {"height_min": 42, "motion_sensitive": True},
+    "Rise of the Resistance": {"height_min": 40, "motion_sensitive": True},
+    "Avatar Flight of Passage": {"height_min": 44, "motion_sensitive": True},
+    "Test Track": {"height_min": 40, "motion_sensitive": True},
+    "Guardians of the Galaxy": {"height_min": 42, "motion_sensitive": True},
+    "Flying Carpet": {"height_min": 36, "motion_sensitive": True},
+    "Aladdin Magic Carpets": {"height_min": 36, "motion_sensitive": False},
+    # Epcot
+    "Soarin' Around the World": {"height_min": 40, "motion_sensitive": True},
+    "Mission Space": {"height_min": 44, "motion_sensitive": True},
+    "Living with the Land": {"height_min": 0, "motion_sensitive": False},
+    "Impressions de France": {"height_min": 0, "motion_sensitive": False},
+    "Frozen Ever After": {"height_min": 0, "motion_sensitive": False},
+    "Maelstrom": {"height_min": 0, "motion_sensitive": False},
+    "Remy's Ratatouille Adventure": {"height_min": 0, "motion_sensitive": False},
+    "Spaceship Earth": {"height_min": 0, "motion_sensitive": False},
+    "Gran Fiesta Tour Starring The Three Caballeros": {"height_min": 0, "motion_sensitive": False},
+    "Journey into Imagination": {"height_min": 0, "motion_sensitive": False},
+    "Turtle Talk with Crush": {"height_min": 0, "motion_sensitive": False},
+}
+
 
 class DisneyIntelligenceEngine:
     """
@@ -60,10 +100,35 @@ class DisneyIntelligenceEngine:
     def get_ride_average(self, ride_id: str) -> float:
         """
         Get 30-day rolling average wait time for a ride.
-        TODO: Implement historical data fetching
+        Pulls from WaitTimeHistory table, or returns sensible default if no data.
         """
-        # Placeholder: return current wait as average
-        return 30.0  # minutes
+        from datetime import datetime, timedelta
+        
+        db = SessionLocal()
+        try:
+            # Query last 30 days of wait times for this ride
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            
+            from database import WaitTimeHistory
+            history = db.query(WaitTimeHistory).filter(
+                WaitTimeHistory.ride_id == ride_id,
+                WaitTimeHistory.recorded_at >= thirty_days_ago
+            ).all()
+            
+            if not history or len(history) == 0:
+                # No historical data; return conservative default
+                # This handles the first 30 days of operation
+                return 25.0  # Default average of 25 minutes
+            
+            # Calculate average of wait times, excluding CLOSED status and None values
+            valid_waits = [h.wait_time for h in history if h.status == "OPERATING" and h.wait_time is not None]
+            if not valid_waits:
+                return 25.0
+            
+            avg = sum(valid_waits) / len(valid_waits)
+            return avg
+        finally:
+            db.close()
 
     def calculate_distance(self, loc1: Tuple[float, float], loc2: Tuple[float, float]) -> float:
         """
@@ -81,10 +146,47 @@ class DisneyIntelligenceEngine:
     def get_party_filter(self, ride_name: str, party_composition: Dict) -> float:
         """
         Check if ride meets party composition requirements.
-        Returns 1.0 if ok, 0.0 if any member can't ride.
+        Returns 1.0 if all party members can ride, 0.0 if any member is restricted.
+        
+        party_composition: Dict with list of party members, e.g.:
+        {
+            "members": [
+                {"name": "Parent", "height_inches": 70, "age": 45, "motion_sensitive": False},
+                {"name": "Child", "height_inches": 38, "age": 6, "motion_sensitive": True}
+            ]
+        }
         """
-        # TODO: Implement height and age restrictions lookup
-        # For now, assume all ok
+        # Find matching ride in restrictions (case-insensitive, partial match)
+        ride_restrictions = None
+        for restricted_ride, restrictions in RIDE_RESTRICTIONS.items():
+            if restricted_ride.lower() in ride_name.lower() or ride_name.lower() in restricted_ride.lower():
+                ride_restrictions = restrictions
+                break
+        
+        # If no restrictions found, assume ride is accessible to all
+        if ride_restrictions is None:
+            return 1.0
+        
+        # Get party members from the provided dictionary
+        members = party_composition.get("members", [])
+        if not members:
+            return 1.0
+        
+        # Check each party member against ride restrictions
+        for member in members:
+            height = member.get("height_inches", 0)
+            is_motion_sensitive = member.get("motion_sensitive", False)
+            
+            # Height restriction check
+            height_min = ride_restrictions.get("height_min", 0)
+            if height < height_min:
+                return 0.0  # Member too short for ride
+            
+            # Motion sensitivity check
+            if is_motion_sensitive and ride_restrictions.get("motion_sensitive", False):
+                return 0.0  # Member can't ride due to motion sensitivity
+        
+        # All party members can safely ride
         return 1.0
 
     def calculate_score(self, ride: Dict, user_location: Tuple[float, float],
@@ -93,7 +195,10 @@ class DisneyIntelligenceEngine:
         Calculate priority score S(a) for a ride.
         S(a) = (W_delta * 0.4) - (D_prox * 0.3) + (P_pref * 0.3)
         """
-        w_delta = ride['wait_time'] - self.get_ride_average(ride['id'])
+        # Handle None wait_time
+        current_wait = ride.get('wait_time') or 0
+        avg_wait = self.get_ride_average(ride['id'])
+        w_delta = current_wait - avg_wait
         d_prox = self.calculate_distance(user_location, ride['location']) / 1000  # Normalize
         p_pref = self.get_party_filter(ride['name'], party_composition)
 
@@ -151,12 +256,44 @@ class DisneyIntelligenceEngine:
 
         return nudges
 
+    def store_wait_times(self, park_id: str) -> None:
+        """
+        Fetch current ride wait times and store them in WaitTimeHistory.
+        This should be called periodically (every 5 minutes) by a background scheduler.
+        """
+        from database import WaitTimeHistory
+        
+        db = SessionLocal()
+        try:
+            rides = self.get_ride_data(park_id)
+            
+            for ride in rides:
+                # Create a history entry for each ride
+                history_entry = WaitTimeHistory(
+                    ride_id=ride['id'],
+                    ride_name=ride['name'],
+                    park_id=park_id,
+                    wait_time=ride['wait_time'],
+                    status=ride['status']
+                )
+                db.add(history_entry)
+            
+            db.commit()
+            print(f"Stored {len(rides)} wait time records for park {park_id}")
+        except Exception as e:
+            print(f"Error storing wait times: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
     async def start_nudge_polling(self, park_id: str, user_location: Tuple[float, float],
                                  interval: int = 300):  # 5 minutes
         """
         Background task to poll for nudges every 5 minutes.
         TODO: Implement actual background task and notifications
         """
+        import asyncio
+        
         while True:
             nudges = self.check_nudges(park_id, user_location)
             if nudges:

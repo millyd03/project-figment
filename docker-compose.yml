@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: figment-backend
+    ports:
+      - "8002:8002"
+    environment:
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - DISNEY_USERNAME=${DISNEY_USERNAME}
+      - DISNEY_PASSWORD=${DISNEY_PASSWORD}
+    volumes:
+      - ./figment.db:/app/figment.db
+      - ./data:/app/data
+    command: python main.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - figment-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: figment-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE=http://backend:8002
+    volumes:
+      - ./frontend:/app/frontend
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - figment-network
+
+networks:
+  figment-network:
+    driver: bridge
+
+volumes:
+  figment_data:
+    driver: local
