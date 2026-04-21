@@ -15,3 +15,5 @@ requests
 apscheduler
 firebase-admin
 pywebpush
+redis
+cryptography

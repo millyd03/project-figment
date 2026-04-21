@@ -76,13 +76,30 @@ streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
 Create a `.env` file (copy from `.env.example`):
 ```env
 SPOTIFY_CLIENT_ID=your_spotify_client_id
+# Optional for PKCE: SPOTIFY_CLIENT_SECRET can be omitted when using the browser-based auth flow.
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:8002/callback
 GOOGLE_API_KEY=your_google_api_key
-DISNEY_USERNAME=your_disney_username
-DISNEY_PASSWORD=your_disney_password
 ACTIVE_MODEL=gemini-pro  # or ollama-local
 OLLAMA_ENDPOINT=http://localhost:11434
 ```
+
+### Token Encryption (recommended)
+You can encrypt stored Spotify refresh tokens at rest using a Fernet key.
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+2. Generate a Fernet key (script included):
+```bash
+python scripts/generate_token_key.py
+# This prints a 44-char key and an example .env line `TOKEN_ENCRYPTION_KEY=...`
+```
+3. Add the printed `TOKEN_ENCRYPTION_KEY=...` line to your `.env` file and restart the backend.
+
+When `TOKEN_ENCRYPTION_KEY` is present the app will encrypt refresh tokens before saving them and decrypt them in memory when needed.
+
 
 ## API Endpoints
 

@@ -10,8 +10,6 @@ services:
       - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
       - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - DISNEY_USERNAME=${DISNEY_USERNAME}
-      - DISNEY_PASSWORD=${DISNEY_PASSWORD}
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./figment.db:/app/figment.db

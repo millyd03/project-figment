@@ -2,6 +2,8 @@ import streamlit as st
 import requests
 import json
 import time
+from config import settings
+from urllib.parse import urlparse
 
 # Configure page for mobile-first design
 st.set_page_config(
@@ -69,8 +71,9 @@ st.markdown("""
     """,
     unsafe_allow_html=True)
 
-# API base URL
-API_BASE = "http://localhost:8002"
+# API base URL derived from backend redirect URI in config
+parsed = urlparse(settings.spotify_redirect_uri)
+API_BASE = f"{parsed.scheme}://{parsed.netloc}"
 
 # App title
 st.markdown("# 🎢🎵 FIGMENT")
@@ -90,38 +93,118 @@ with tab_spotify:
     st.subheader("Spotify Playlist Creator")
     
     # Authentication status
+    profiles = []
+    active_profile = None
+    auth_error = None
     try:
         auth_response = requests.get(f"{API_BASE}/auth/status")
-        is_authenticated = auth_response.json().get("authenticated", False)
-    except:
+        if auth_response.status_code == 200:
+            status = auth_response.json()
+            is_authenticated = status.get("authenticated", False)
+            profiles = status.get("profiles", []) or []
+            active_profile = status.get("active_profile")
+        else:
+            is_authenticated = False
+            auth_error = f"Auth service error: {auth_response.status_code}"
+    except Exception as e:
         is_authenticated = False
+        profiles = []
+        active_profile = None
+        auth_error = f"Connection error: {str(e)}"
     
-    if is_authenticated:
-        st.success("✅ Connected to Spotify")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔄 Reconnect", use_container_width=True):
-                st.info("Redirecting to Spotify...")
+    # Auto-authenticate if no valid profile exists
+    if not is_authenticated and not profiles and not auth_error:
+        st.info("🔄 Connecting to Spotify...")
+        try:
+            response = requests.get(f"{API_BASE}/auth/spotify")
+            if response.status_code == 200:
+                auth_url = response.json().get('auth_url')
+                if auth_url:
+                    # Automatically redirect to auth URL via JS
+                    st.markdown(f"<script>window.location.href = '{auth_url}';</script>", unsafe_allow_html=True)
+                    st.stop()
+            else:
+                auth_error = f"Failed to get auth URL: {response.status_code}"
+        except Exception as e:
+            auth_error = f"Auto-auth failed: {str(e)}"
+    
+    # Show authentication status or error
+    if auth_error:
+        st.error(f"❌ Authentication failed: {auth_error}")
+        if st.button("🔄 Retry Connection", use_container_width=True):
+            st.rerun()
+    elif is_authenticated:
+        active_label = active_profile.get("profile_name") if active_profile else None
+        if not active_label and active_profile:
+            active_label = active_profile.get("display_name") or active_profile.get("profile_key")
+        st.success(f"✅ Connected to Spotify{f' as {active_label}' if active_label else ''}")
+    elif profiles:
+        st.warning("❌ Not authenticated with the current profile.")
+        if active_profile and active_profile.get("id"):
+            if st.button("🔄 Reconnect Profile", use_container_width=True):
                 try:
-                    response = requests.get(f"{API_BASE}/auth/spotify")
+                    response = requests.get(f"{API_BASE}/auth/spotify", params={"profile_id": active_profile.get("id")})
                     if response.status_code == 200:
-                        st.markdown(f"[Authenticate]({response.json()['auth_url']})")
+                        auth_url = response.json().get('auth_url')
+                        if auth_url:
+                            st.markdown(f"<script>window.location.href = '{auth_url}';</script>", unsafe_allow_html=True)
+                            st.stop()
+                    else:
+                        st.error("Failed to get auth URL")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
-    else:
-        st.warning("❌ Not authenticated")
-        if st.button("🔐 Connect Spotify", use_container_width=True):
-            try:
-                response = requests.get(f"{API_BASE}/auth/spotify")
-                if response.status_code == 200:
-                    st.markdown(f"[Click to authenticate]({response.json()['auth_url']})")
-                    st.info("After authenticating, return and refresh this page.")
-                else:
-                    st.error("Failed to get auth URL")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+
+    # Profile management (only show if authenticated or profiles exist)
+    if is_authenticated or profiles:
+        profile_labels = []
+        profile_map = {}
+        if profiles:
+            for profile in profiles:
+                label = profile.get("profile_name") or profile.get("display_name") or profile.get("profile_key") or f"Profile {profile.get('id')}"
+                if profile.get("is_active"):
+                    label = f"{label} (active)"
+                profile_labels.append(label)
+                profile_map[label] = profile
+            profile_labels.append("➕ Add New Profile")
+
+        selected_profile = None
+        if profile_labels:
+            current_index = next((i for i, p in enumerate(profiles) if p.get("is_active")), 0)
+            selected_label = st.selectbox("Spotify Profile", profile_labels, index=current_index if current_index < len(profile_labels) else 0)
+            if selected_label != "➕ Add New Profile":
+                selected_profile = profile_map[selected_label]
+                if selected_profile and not selected_profile.get("is_active"):
+                    if st.button("Switch to selected profile", use_container_width=True):
+                        try:
+                            response = requests.post(f"{API_BASE}/auth/profile/select", json={"profile_id": selected_profile.get("id")})
+                            if response.status_code == 200:
+                                st.success("Profile switched. Refresh the page to continue.")
+                            else:
+                                st.error("Unable to switch profile.")
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
+            else:
+                st.markdown("### Add New Spotify Profile")
+                new_profile_name = st.text_input("Profile label", "", placeholder="e.g. Family, Work, Guest")
+                if st.button("Add New Profile", use_container_width=True):
+                    st.info("Redirecting to Spotify to add a new profile...")
+                    try:
+                        params = {}
+                        if new_profile_name.strip():
+                            params["profile_name"] = new_profile_name.strip()
+                        response = requests.get(f"{API_BASE}/auth/spotify", params=params)
+                        if response.status_code == 200:
+                            auth_url = response.json().get('auth_url')
+                            if auth_url:
+                                st.markdown(f"<script>window.location.href = '{auth_url}';</script>", unsafe_allow_html=True)
+                                st.stop()
+                        else:
+                            st.error("Failed to get auth URL")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
     
+
+
     st.divider()
     
     if is_authenticated:
@@ -174,9 +257,18 @@ with tab_disney:
     
     with st.form("disney_form"):
         st.markdown("### 🗺️ Park & Location")
+        park_labels = {
+            "Disneyland": "Disneyland",
+            "DisneysCaliforniaAdventure": "Disney's California Adventure",
+            "MagicKingdomWaltDisneyWorld": "Magic Kingdom",
+            "EpcotWaltDisneyWorld": "EPCOT",
+            "DisneysHollywoodStudios": "Disney's Hollywood Studios",
+            "DisneysAnimalKingdom": "Disney's Animal Kingdom",
+        }
         park_id = st.selectbox(
             "Select Park",
-            ["MagicKingdomWaltDisneyWorld", "EpcotWaltDisneyWorld"],
+            list(park_labels.keys()),
+            format_func=lambda park: park_labels.get(park, park),
             help="Which Disney park are you at?"
         )
         

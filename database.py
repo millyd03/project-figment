@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float, DateTime, ForeignKey, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import datetime
@@ -21,11 +21,18 @@ class SpotifyToken(Base):
     __tablename__ = "spotify_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
+    profile_name = Column(String, nullable=True)
+    profile_key = Column(String, unique=True, index=True, nullable=True)
+    spotify_user_id = Column(String, unique=True, nullable=True)
+    display_name = Column(String, nullable=True)
     access_token = Column(String)
     refresh_token = Column(String, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     token_type = Column(String, default="Bearer")
     scope = Column(String, nullable=True)
+    is_active = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 class MustDoRide(Base):
     __tablename__ = "must_do_rides"
@@ -84,4 +91,26 @@ def get_db():
         db.close()
 
 # Create tables
+# Create tables and update existing schema if needed
 Base.metadata.create_all(bind=engine)
+
+# SQLite does not automatically alter existing tables for new columns.
+# Apply schema migration for Spotify token profile support when necessary.
+inspector = inspect(engine)
+if "spotify_tokens" in inspector.get_table_names():
+    columns = {column["name"] for column in inspector.get_columns("spotify_tokens")}
+    with engine.begin() as conn:
+        if "profile_name" not in columns:
+            conn.execute(text("ALTER TABLE spotify_tokens ADD COLUMN profile_name TEXT"))
+        if "profile_key" not in columns:
+            conn.execute(text("ALTER TABLE spotify_tokens ADD COLUMN profile_key TEXT"))
+        if "spotify_user_id" not in columns:
+            conn.execute(text("ALTER TABLE spotify_tokens ADD COLUMN spotify_user_id TEXT"))
+        if "display_name" not in columns:
+            conn.execute(text("ALTER TABLE spotify_tokens ADD COLUMN display_name TEXT"))
+        if "is_active" not in columns:
+            conn.execute(text("ALTER TABLE spotify_tokens ADD COLUMN is_active BOOLEAN DEFAULT 0"))
+        if "created_at" not in columns:
+            conn.execute(text("ALTER TABLE spotify_tokens ADD COLUMN created_at DATETIME"))
+        if "updated_at" not in columns:
+            conn.execute(text("ALTER TABLE spotify_tokens ADD COLUMN updated_at DATETIME"))

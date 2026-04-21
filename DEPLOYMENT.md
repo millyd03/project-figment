@@ -56,8 +56,6 @@ docker run -p 8002:8002 \
   -e SPOTIFY_CLIENT_ID=your_id \
   -e SPOTIFY_CLIENT_SECRET=your_secret \
   -e GOOGLE_API_KEY=your_key \
-  -e DISNEY_USERNAME=your_username \
-  -e DISNEY_PASSWORD=your_password \
   figment-backend
 ```
 
@@ -106,9 +104,7 @@ gcloud run deploy figment-backend \
   --set-env-vars \
     SPOTIFY_CLIENT_ID=your_id,\
     SPOTIFY_CLIENT_SECRET=your_secret,\
-    GOOGLE_API_KEY=your_key,\
-    DISNEY_USERNAME=your_username,\
-    DISNEY_PASSWORD=your_password
+    GOOGLE_API_KEY=your_key
 ```
 
 ### Heroku
@@ -127,8 +123,6 @@ heroku create figment-backend
 heroku config:set SPOTIFY_CLIENT_ID=your_id
 heroku config:set SPOTIFY_CLIENT_SECRET=your_secret
 heroku config:set GOOGLE_API_KEY=your_key
-heroku config:set DISNEY_USERNAME=your_username
-heroku config:set DISNEY_PASSWORD=your_password
 
 # Deploy
 git push heroku main
